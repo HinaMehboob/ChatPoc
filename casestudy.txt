@@ -1,0 +1,64 @@
+Problem Statement: Scalable Chat Platform — Custom Protocol Server Behind a Software Load Balancer
+Background
+Real-time messaging systems (Slack, WhatsApp, Discord) face two hard problems at once. First, at the wire level: how do you move messages reliably and efficiently over sockets, frame them correctly, and survive flaky connections that drop and reconnect? Second, at the scaling level: a single server can only hold so many connected clients, so you need multiple server instances with something intelligently distributing clients across them — without dropping messages or losing sessions.
+This PoC deliberately fuses both layers. The intern builds a chat system from the socket up using a custom protocol, then proves it can scale horizontally by putting a self-built load balancer in front of several server instances. The interesting tension — and the heart of this project — is that chat connections are long-lived and stateful, which makes load balancing far less trivial than balancing stateless web requests.
+The Problem
+Design a custom application-layer messaging protocol, build a multi-client chat server that speaks it reliably over raw sockets, run multiple instances of that server, and place a self-built software load balancer in front of them that distributes clients intelligently, performs health checks, and exposes a live metrics view. Then demo the whole system handling many clients, a server failure, and client reconnections — live.
+Objectives (Core Requirements)
+Part A — Protocol & Chat Server
+
+Design a custom application-layer protocol over raw TCP (and/or UDP) sockets. Define the message format (headers, message types, framing/length-prefixing so messages don't run into each other on the stream), and document it as a spec.
+Support core chat features: clients register with a username, join the chat, send messages broadcast to others (and/or to rooms/channels as a stretch), and see who's online.
+Guarantee reliable delivery: no lost or corrupted messages, correct framing under load, and graceful handling of partial reads/writes.
+Handle reconnection: when a client drops and comes back, it should re-establish its session cleanly (re-auth, rejoin, ideally without losing queued messages).
+
+Part B — Software Load Balancer
+5. Run N instances of the chat server (different ports/hosts).
+6. Build a load balancer that sits in front of them and assigns incoming clients to a backend using at least two selectable strategies — e.g., round-robin and least-connections (fewest active clients).
+7. Health-check backends periodically; automatically stop routing new clients to a dead/unresponsive server and resume when it recovers.
+8. Expose a metrics view (CLI or simple web page): per-backend active connections, total messages routed, which servers are up/down, and which strategy is active.
+The Hard Part (Call This Out Explicitly to the Intern)
+Unlike HTTP requests, a chat client opens a connection and keeps it. So the intern must reason about connection affinity / sticky sessions: once a client is assigned to a backend, it stays there for the life of the connection. They must also decide how clients on different backend servers still see each other's messages — i.e., how the backends share or relay state. There's no single "correct" answer; the design choices and trade-offs they make here are exactly what's being evaluated. (Two reasonable approaches: a shared message bus/relay between backends, or having the balancer fan out. Let them choose and defend it.)
+Scope
+In scope: Runs locally on one machine using multiple ports, or across a few VMs/containers. A few dozen simulated clients is plenty to prove the concept. Text messaging only.
+Out of scope: Encryption/TLS (mention as a stretch), persistent message history in a database (optional stretch), production-scale tuning, file transfer, voice/video, and authentication beyond a simple username. This is a PoC — a clean working core beats a long feature list.
+Suggested Tech Stack (Not Prescriptive — they justify their choice)
+
+Language: Python (socket, threading/asyncio, selectors), Go (excellent for concurrent connections), or Node.js (net module). Go and asyncio are good fits for many concurrent connections.
+Load balancer: Built from scratch on raw sockets — not nginx/HAProxy (using those defeats the purpose, though they may compare against one).
+Inter-server communication (if chosen): raw sockets, or a lightweight pub/sub like Redis as a stretch.
+Metrics view: A simple terminal dashboard or a minimal web page (Flask/Express + a refresh or websocket).
+Load testing: A script that spawns many client connections to demonstrate distribution.
+
+Suggested Milestones (typical 6–8 week internship)
+
+Week 1–2: Research sockets/framing. Draft the protocol spec. Get a basic single-server, multi-client chat working (one server, several clients talking).
+Week 3–4: Add reliable framing, reconnection handling, and online-user tracking. Harden the server against partial reads and abrupt disconnects.
+Week 5: Run multiple server instances. Build the load balancer with round-robin + sticky sessions.
+Week 6: Add least-connections strategy, health checks, and automatic failover. Solve cross-backend message visibility.
+Week 7: Build the metrics view. Load-test with many clients. Deliberately kill servers mid-demo and verify recovery.
+Week 8: Documentation, polish, demo rehearsal, presentation.
+
+Deliverables
+
+Working PoC — source in a Git repo with a clear README, run instructions, and a separate protocol specification document.
+Live demo that must show: many clients connected and chatting; the load balancer distributing them across backends (visible in the metrics view); a backend server killed mid-demo with clients failing over / reconnecting and the system staying alive; and a switch between balancing strategies.
+Presentation (10–15 min): the problem, the protocol design, the architecture (with a data-flow diagram), how they solved sticky sessions and cross-backend messaging, what works, challenges, limitations, and next steps.
+
+Evaluation Criteria
+
+Functionality (35%) — Does the full loop work: custom protocol → reliable multi-client chat → load-balanced across instances → health checks → failover → metrics?
+Technical design (25%) — Quality of the protocol spec, soundness of the framing/reconnection logic, and the reasoning behind their sticky-session and cross-backend approach.
+Demo quality (20%) — Can they show distribution and survive a live server failure convincingly?
+Communication (15%) — Clarity of the spec and presentation; ability to defend trade-offs under questioning.
+Initiative / stretch goals (5%).
+
+Stretch Goals (Optional, for standouts)
+
+Channels/rooms instead of a single global chat.
+Message queuing so a reconnecting client receives messages it missed while offline.
+Weighted load balancing or a third strategy (e.g., least-latency).
+TLS encryption of the custom protocol.
+A real shared message bus (Redis pub/sub) so all backends share state cleanly.
+Containerize servers + balancer with Docker Compose for one-command spin-up.
+Compare their balancer's behavior/throughput against nginx or HAProxy and report findings.
